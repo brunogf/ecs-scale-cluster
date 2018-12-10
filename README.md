@@ -12,4 +12,10 @@ Parameters:
 - MIN_COUNT = string with the minimum number of times the largest task fits in the cluster before a scale up event is called
 - MAX_COUNT = string with the minimum number of times the largest task fits in the cluster before a scale down event is called
 
+Handler: 
+
+scale_cluster.lambda_handler
+
+Role: 
+
 Runs every time Cloudwatch receives an event related to ECS (from cluster instances or services tasks). Then it calculates the largest task (RAM and CPU) that is running on the cluster. Then it calculates (based on MIN_COUNT and MAX_COUNT) if the cluster needs more or less instances.   
