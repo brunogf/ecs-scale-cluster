@@ -72,24 +72,6 @@ def fits(cluster, cpu, ram):
     
     return fits
 
-# def fits_per_instance(cluster, cpu, ram):
-#     instance_type = os.environ['INSTANCE_TYPE']
-#     active_instances = ecs.list_container_instances(cluster=cluster, status='ACTIVE', filter='attribute:ecs.instance-type == ' + instance_type)["containerInstanceArns"]
-
-#     if len(active_instances) > 0:
-#         instance = ecs.describe_container_instances(cluster=cluster, containerInstances=[active_instances[0]])
-#         instance_cpu = instance['containerInstances'][0]['registeredResources'][0]['integerValue']
-#         instance_ram = instance['containerInstances'][0]['registeredResources'][1]['integerValue']
-
-#     fpi = min(instance_ram/ram, instance_cpu/cpu)
-
-#     if (fpi == 1):
-#         min_fits = 3
-#     else: 
-#         min_fits = fpi
-
-#     return min_fits, min_fits*2
-
 def remove_draining(cluster):
     draining_instances = ecs.list_container_instances(cluster=cluster, status='DRAINING')["containerInstanceArns"]
 
