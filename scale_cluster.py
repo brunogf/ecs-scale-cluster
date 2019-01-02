@@ -7,7 +7,13 @@ ecs = boto3.client('ecs')
 asg = boto3.client('autoscaling')
 cw = boto3.client('cloudwatch')
 
-def find_largest_task(cluster):
+cluster = os.environ['CLUSTER_NAME']
+asg_name = os.environ['ASG_NAME']
+instance_type = os.environ['INSTANCE_TYPE'] # ASG related to the cluster LC instance type
+min_count = int(os.environ['MIN_COUNT']) # Min number of largest tasks that must fit, if less scale up
+max_count = int(os.environ['MAX_COUNT']) # Max number of largest tasks that fit, if more scale down
+
+def find_largest_task():
 
     tasks = ecs.list_tasks(cluster=cluster)['taskArns']
     task_descs = ecs.describe_tasks(cluster=cluster, tasks=tasks)
@@ -46,7 +52,7 @@ def find_largest_task(cluster):
 
     return largest_cpu, largest_ram
 
-def fits(cluster, cpu, ram):
+def fits(cpu, ram):
     
     instances = ecs.list_container_instances(cluster=cluster, status='ACTIVE')
     instances_desc = ecs.describe_container_instances(cluster=cluster, containerInstances=instances["containerInstanceArns"])
@@ -72,18 +78,35 @@ def fits(cluster, cpu, ram):
     
     return fits
 
-def remove_draining(cluster):
-    draining_instances = ecs.list_container_instances(cluster=cluster, status='DRAINING')["containerInstanceArns"]
+# def fits_per_instance(cpu, ram):
+#     instance_type = os.environ['INSTANCE_TYPE']
+#     active_instances = ecs.list_container_instances(cluster=cluster, status='ACTIVE', filter='attribute:ecs.instance-type == ' + instance_type)["containerInstanceArns"]
+
+#     if len(active_instances) > 0:
+#         instance = ecs.describe_container_instances(cluster=cluster, containerInstances=[active_instances[0]])
+#         instance_cpu = instance['containerInstances'][0]['registeredResources'][0]['integerValue']
+#         instance_ram = instance['containerInstances'][0]['registeredResources'][1]['integerValue']
+
+#     fpi = min(instance_ram/ram, instance_cpu/cpu)
+
+#     if (fpi == 1):
+#         min_fits = 3
+#     else: 
+#         min_fits = fpi
+
+#     return min_fits, min_fits*2
+
+def remove_draining():
+    draining_instances = ecs.list_container_instances(cluster=cluster, status='DRAINING', filter='attribute:ecs.instance-type == ' + instance_type)["containerInstanceArns"]
 
     for instance in draining_instances:
         instance_id = ecs.describe_container_instances(cluster=cluster, containerInstances=[instance])["containerInstances"][0]["ec2InstanceId"]
         running_tasks = len(ecs.list_tasks(cluster=cluster, containerInstance=instance, desiredStatus='RUNNING')['taskArns'])
         if running_tasks == 0:
-            print instance_id
             asg.terminate_instance_in_auto_scaling_group(InstanceId=instance_id, ShouldDecrementDesiredCapacity=True)
+            print instance_id
 
-def instance_candidate(cluster):
-    instance_type = os.environ['INSTANCE_TYPE']
+def instance_candidate():
     active_instances = ecs.list_container_instances(cluster=cluster, status='ACTIVE', filter='attribute:ecs.instance-type == ' + instance_type)["containerInstanceArns"]
     # filter cluster by instance type
     min_tasks = 100
@@ -104,23 +127,17 @@ def lambda_handler(event, context):
     if event["source"] != "aws.ecs":
        raise ValueError("Function only supports input from events with a source type of: aws.ecs")
 
-    cluster = os.environ['CLUSTER_NAME']
-    asg_name = os.environ['ASG_NAME']
-    instance_type = os.environ['INSTANCE_TYPE'] # ASG related to the cluster LC instance type
-    min_count = int(os.environ['MIN_COUNT']) # Min number of largest tasks that must fit, if less scale up
-    max_count = int(os.environ['MAX_COUNT']) # Max number of largest tasks that fit, if more scale down
-
     # Remove draining instances with no tasks running
     print ('Removing draining instances...')
-    remove_draining(cluster)
+    remove_draining()
 
     print('Calculating scaling needs for ' + cluster + '...')
 
-    largest_cpu, largest_ram = find_largest_task(cluster)
+    largest_cpu, largest_ram = find_largest_task()
     print 'Largest CPU: ' + str(largest_cpu)
     print 'Largest RAM: ' + str(largest_ram)
     
-    count = fits(cluster, largest_cpu, largest_ram)
+    count = fits(largest_cpu, largest_ram)
     print 'Largest task fits ' + str(count) + ' times in the cluster' # Task with largest CPU and task (maybe not the same) with largest RAM
 
     asg_desc = asg.describe_auto_scaling_groups(AutoScalingGroupNames=[asg_name])
@@ -132,7 +149,7 @@ def lambda_handler(event, context):
     elif (count > max_count):
         draining_instances = ecs.list_container_instances(cluster=cluster, status='DRAINING')["containerInstanceArns"]
         if (len(draining_instances)==0):
-            instance, min_tasks = instance_candidate(cluster)
+            instance, min_tasks = instance_candidate()
             instance_id = ecs.describe_container_instances(cluster=cluster, containerInstances=[instance])["containerInstances"][0]["ec2InstanceId"]
             ecs.update_container_instances_state(cluster=cluster, containerInstances=[instance], status='DRAINING')
             print 'Scaling down, draining instance ' + instance_id + ' with ' + str(min_tasks) + ' running tasks'
