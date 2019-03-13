@@ -103,8 +103,16 @@ def remove_draining():
         instance_id = ecs.describe_container_instances(cluster=cluster, containerInstances=[instance])["containerInstances"][0]["ec2InstanceId"]
         running_tasks = len(ecs.list_tasks(cluster=cluster, containerInstance=instance, desiredStatus='RUNNING')['taskArns'])
         if running_tasks == 0:
-            asg.terminate_instance_in_auto_scaling_group(InstanceId=instance_id, ShouldDecrementDesiredCapacity=True)
-            print instance_id
+            try: 
+                asg.terminate_instance_in_auto_scaling_group(InstanceId=instance_id, ShouldDecrementDesiredCapacity=True)
+                print (instance_id)
+            except ScalingActivityInProgress: 
+                print ("Could not terminate instance beacause a scaling activity is in progress..")
+                print ("Terminating execution.")
+                quit()
+            except:
+                print ("Unexpected error:", sys.exc_info()[0])
+
 
 def instance_candidate():
     active_instances = ecs.list_container_instances(cluster=cluster, status='ACTIVE', filter='attribute:ecs.instance-type == ' + instance_type)["containerInstanceArns"]
@@ -134,26 +142,26 @@ def lambda_handler(event, context):
     print('Calculating scaling needs for ' + cluster + '...')
 
     largest_cpu, largest_ram = find_largest_task()
-    print 'Largest CPU: ' + str(largest_cpu)
-    print 'Largest RAM: ' + str(largest_ram)
+    print ('Largest CPU: ' + str(largest_cpu))
+    print ('Largest RAM: ' + str(largest_ram))
     
     count = fits(largest_cpu, largest_ram)
-    print 'Largest task fits ' + str(count) + ' times in the cluster' # Task with largest CPU and task (maybe not the same) with largest RAM
+    print ('Largest task fits ' + str(count) + ' times in the cluster') # Task with largest CPU and task (maybe not the same) with largest RAM
 
     asg_desc = asg.describe_auto_scaling_groups(AutoScalingGroupNames=[asg_name])
     asg_capacity = asg_desc["AutoScalingGroups"][0]["DesiredCapacity"]
 
     if (count < min_count):
         asg.set_desired_capacity(AutoScalingGroupName=asg_name, DesiredCapacity=asg_capacity+1, HonorCooldown=True)
-        print 'Scaling up from ' + str(asg_capacity) + ' to ' + str(asg_capacity+1)
+        print ('Scaling up from ' + str(asg_capacity) + ' to ' + str(asg_capacity+1))
     elif (count > max_count):
         draining_instances = ecs.list_container_instances(cluster=cluster, status='DRAINING')["containerInstanceArns"]
         if (len(draining_instances)==0):
             instance, min_tasks = instance_candidate()
             instance_id = ecs.describe_container_instances(cluster=cluster, containerInstances=[instance])["containerInstances"][0]["ec2InstanceId"]
             ecs.update_container_instances_state(cluster=cluster, containerInstances=[instance], status='DRAINING')
-            print 'Scaling down, draining instance ' + instance_id + ' with ' + str(min_tasks) + ' running tasks'
+            print ('Scaling down, draining instance ' + instance_id + ' with ' + str(min_tasks) + ' running tasks')
         else:
-            print 'Instances still draining, do nothing'
+            print ('Instances still draining, do nothing')
     else:
-        print 'Stable'
+        print ('Stable')
