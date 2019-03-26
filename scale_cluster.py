@@ -110,9 +110,6 @@ def remove_draining():
                 print ("Could not terminate instance beacause a scaling activity is in progress..")
                 print ("Terminating execution.")
                 quit()
-            except:
-                print ("Unexpected error:", sys.exc_info()[0])
-
 
 def instance_candidate():
     active_instances = ecs.list_container_instances(cluster=cluster, status='ACTIVE', filter='attribute:ecs.instance-type == ' + instance_type)["containerInstanceArns"]
