@@ -119,8 +119,8 @@ def instance_candidate():
     # filter cluster by instance type
     min_tasks = 100
 
-    for instance in active_instances: 
-        running_tasks = len(ecs.list_tasks(cluster=cluster, containerInstance=instance, desiredStatus='RUNNING'))
+    for instance in active_instances:
+        running_tasks = len(ecs.list_tasks(cluster=cluster, containerInstance=instance, desiredStatus='RUNNING')['taskArns'])
         if (running_tasks < min_tasks):
             min_tasks = running_tasks
             candidate = instance
